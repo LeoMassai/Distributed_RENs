@@ -14,4 +14,4 @@ l = 6
 
 RENsys = REN(m, p, n, l, bias=False, mode="l2stable")
 
-a, b = RENsys(torch.tensor([1.6, 4.4]), torch.tensor([4.8, 7.3, 4.2]), 0, 0.7)
+a, b = RENsys(torch.tensor([1.6, 4.4]), torch.tensor([4.8, 7.3, 4.2]), 0)
