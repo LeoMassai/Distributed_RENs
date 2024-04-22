@@ -7,11 +7,14 @@ import cvxpy as cp
 from torch.autograd import Variable
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 
 
 class RNNModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, layer_dim, output_dim):
         super(RNNModel, self).__init__()
+
+        self.input_dim = input_dim
 
         # Number of hidden dimensions
         self.hidden_dim = hidden_dim
@@ -25,12 +28,16 @@ class RNNModel(nn.Module):
         # Readout layer
         self.fc = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, u, xi, t):
+        self.opt = OptNet(3, self.input_dim)
+
+    def forward(self, u, xi, A, b, t):
         # Initialize hidden state randomly
         # One time step
         xi = self.rnn(u, xi)
         out = self.fc(xi)
         out = out.squeeze()
+        #OptNet Pass
+        out = self.opt(out, u, A, b)
         return out, xi
 
 
@@ -327,24 +334,15 @@ class NetworkedRENs(nn.Module):
 
 # Opten: Convex optimization problem as a layer
 class OptNet(torch.nn.Module):
-    def __init__(self, D_in):
+    def __init__(self, m, n):
         super(OptNet, self).__init__()
         # self.b = torch.nn.Parameter(torch.randn(D_in))
-        self.G = torch.nn.Parameter(torch.randn(D_in, D_in))
-        self.h = torch.nn.Parameter(torch.randn(D_in))
-        G = cp.Parameter((D_in, D_in))
-        h = cp.Parameter(D_in)
-        z = cp.Variable(D_in)
-        # b = cp.Parameter(D_in)
-        x = cp.Parameter(D_in)
-        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - x)), [G @ z <= h])
-        self.layer = CvxpyLayer(prob, [G, h, x], [z])
+        self.A = cp.Parameter((m, n))
+        self.b = cp.Parameter(m)
+        z = cp.Variable(n)
+        self.uo = cp.Parameter(n)
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(z-self.uo)), [self.A @ z >= self.b])
+        self.layer = CvxpyLayer(prob, [self.A, self.b, self.uo], [z])
 
-    def forward(self, x):
-        # when x is batched, repeat W and b
-        if x.ndim == 2:
-            batch_size = x.shape[0]
-            return self.layer(self.G.repeat(batch_size, 1, 1),
-                              self.h.repeat(batch_size, 1), x)[0]
-        else:
-            return self.layer(self.G, self.h, x)[0]
+    def forward(self, uo, x, A, b):
+        return self.layer(A, b - A @ x, uo)[0]

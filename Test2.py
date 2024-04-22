@@ -4,6 +4,11 @@ import math
 import matplotlib.pyplot as plt
 from Models import REN, RNNModel
 import numpy as np
+from scipy.spatial import ConvexHull
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+device = torch.device('cpu')
 
 
 def line_circle_intersection_penalty(point1, point2, obstacle_position, obstacle_radius, penalty):
@@ -61,11 +66,13 @@ class Robot:
 
 
 # Define obstacle position and radius
-obstacle_position = torch.tensor([5, 5])  # Example obstacle position [x, y]
+
+
+obstacle_position = torch.tensor([5, 5], device=device)  # Example obstacle position [x, y]
 obstacle_radius = 3.0
-target = torch.tensor([10.6, 8.3])
+target = torch.tensor([10.6, 8.3], device=device)
 # Create and run the robot with velocity control in 2D space
-posi = torch.tensor([2.37, 3.34])
+posi = torch.tensor([3, -3.76], device=device)
 robot = Robot(posi, obstacle_position, obstacle_radius, target)
 
 # Control horizon
@@ -75,7 +82,10 @@ m = 2
 p = 2
 l = 4
 
-system = 'REN'
+A = torch.tensor([[1.1, 0], [0, 1], [-1, -1]], device=device)  # Matrix A
+b = torch.tensor([5.1, 5, -1], device=device)  # Vector b
+
+system = 'RNN'
 
 if system == 'REN':
     RENsys = REN(m, p, n, l)
@@ -92,7 +102,7 @@ learning_rate = 1.0e-2
 optimizer = torch.optim.Adam(RENsys.parameters(), lr=learning_rate)
 optimizer.zero_grad()
 
-uf = torch.zeros((2, T))
+uf = torch.zeros((2, T), device=device)
 dist = nn.MSELoss()
 
 for epoch in range(epochs):
@@ -100,19 +110,19 @@ for epoch in range(epochs):
     loss = 0
     final_position_penalty = 0
     obstacle_penalty = 0
-    u = torch.zeros(2)
-    xi = torch.randn(n)
+    u = torch.zeros(2, device=device)
+    xi = torch.randn(n, device=device)
     pos = posi
     for t in range(T):
         poso = pos
-        u, xi = RENsys(pos, xi, t)
+        u, xi = RENsys(pos, xi, A, b, t)
         pos = pos + u
         uf[:, t] = u
         #distance_to_obstacle = torch.norm(pos - robot.obstacle_position)
         obstacle_penalty = obstacle_penalty + line_circle_intersection_penalty(poso, pos, obstacle_position,
                                                                                obstacle_radius, 1e12)
         final_position_penalty = final_position_penalty + dist(pos, target)
-    loss = 1e2 * final_position_penalty + 0.1 * obstacle_penalty + 1e10 * dist(pos, target)
+    loss = 1e2 * final_position_penalty + 1e10 * dist(pos, target)
     loss.backward()
     optimizer.step()
     if system == 'REN':
@@ -122,7 +132,7 @@ for epoch in range(epochs):
 
 # Simulate robot's movements for the next T time steps
 
-with torch.no_grad():
+with (torch.no_grad()):
     for t in range(T):
         velocity_x, velocity_y = uf[:, t]
         robot.update_state(velocity_x, velocity_y)
@@ -131,17 +141,42 @@ with torch.no_grad():
         # if robot.check_collision():
         #     print(f"Collision detected at time step {t}! Final position:", robot.position)
         #     break
-    else:
-        print("Obstacle avoided! Final position:", robot.position)
 
     # Plot robot's trajectory and obstacle
-    history = torch.stack(robot.history)
-    obstacle_circle = plt.Circle(obstacle_position, obstacle_radius, color='r', fill=False)
+    xlim = (-9, 9)
+    ylim = (-9, 9)
+    num_points = 1000
+    A = np.array([[1, 0], [0, 1], [-1, -1]])  # Matrix A
+    b = np.array([5, 5, -1])  # Vector b
+
+    plt.figure()
+    x = np.linspace(xlim[0], xlim[1], num_points)
+    y = np.linspace(ylim[0], ylim[1], num_points)
+    X, Y = np.meshgrid(x, y)
+    points = np.vstack([X.ravel(), Y.ravel()]).T
+
+    # Filter points that satisfy the inequality Ax < b
+    mask = np.all(np.dot(points, A.T) < b, axis=1)
+    filtered_points = points[mask]
+
+    # Find the convex hull of the filtered points
+    hull = ConvexHull(filtered_points)
+
+    # Plot the polygon
+    plt.plot(filtered_points[:, 0], filtered_points[:, 1], 'o', markersize=3)
+    for simplex in hull.simplices:
+        plt.plot(filtered_points[simplex, 0], filtered_points[simplex, 1], 'k-')
+    history = torch.stack(robot.history).cpu()
+    #obstacle_circle = plt.Circle(obstacle_position, obstacle_radius, color='r', fill=False)
 
     plt.plot(history[:, 0], history[:, 1], marker='o', label='Robot trajectory')
-    plt.gca().add_patch(obstacle_circle)
-    plt.scatter(obstacle_position[0], obstacle_position[1], color='r', label='Obstacle center')
-    plt.scatter(target[0], target[1], color='b', label='Target point')  # Add target point
+    #plt.gca().add_patch(obstacle_circle)
+    #plt.scatter(obstacle_position[0].cpu(), obstacle_position[1].cpu(), color='r', label='Obstacle center')
+    plt.scatter(target[0].cpu(), target[1].cpu(), color='b', label='Target point')  # Add target point
+
+
+
+
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.title('Robot Movement and Obstacle')
@@ -153,3 +188,12 @@ with torch.no_grad():
     plt.figure()
     plt.plot(range(epochs), lossp.detach().numpy())
     plt.show()
+
+
+
+
+# Define A and b for the closed region
+
+
+# Plot the polygon
+
