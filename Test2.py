@@ -69,10 +69,12 @@ class Robot:
 
 
 obstacle_position = torch.tensor([5, 5], device=device)  # Example obstacle position [x, y]
+obstacle_position2 = torch.tensor([9, 9.76], device=device)  # Example obstacle position [x, y]
 obstacle_radius = 3.0
+obstacle_radius2 = .8
 target = torch.tensor([10.6, 8.3], device=device)
 # Create and run the robot with velocity control in 2D space
-posi = torch.tensor([3, -3.76], device=device)
+posi = torch.tensor([1.76, 5.49], device=device)
 robot = Robot(posi, obstacle_position, obstacle_radius, target)
 
 # Control horizon
@@ -86,6 +88,8 @@ A = torch.tensor([[1.1, 0], [0, 1], [-1, -1]], device=device)  # Matrix A
 b = torch.tensor([5.1, 5, -1], device=device)  # Vector b
 
 system = 'RNN'
+target = torch.tensor([10.2, 10.2])
+e = 0.02 * torch.ones(1)
 
 if system == 'REN':
     RENsys = REN(m, p, n, l)
@@ -95,10 +99,10 @@ else:
 model_parameters = filter(lambda p: p.requires_grad, RENsys.parameters())
 params = sum([np.prod(p.size()) for p in model_parameters])
 
-epochs = 3000
+epochs = 1600
 lossp = torch.zeros(epochs)
 # Define Optimization method
-learning_rate = 1.0e-2
+learning_rate = 1.0e-3
 optimizer = torch.optim.Adam(RENsys.parameters(), lr=learning_rate)
 optimizer.zero_grad()
 
@@ -110,19 +114,22 @@ for epoch in range(epochs):
     loss = 0
     final_position_penalty = 0
     obstacle_penalty = 0
+    obstacle_penalty2 = 0
     u = torch.zeros(2, device=device)
     xi = torch.randn(n, device=device)
     pos = posi
     for t in range(T):
         poso = pos
-        u, xi = RENsys(pos, xi, A, b, t)
+        u, xi = RENsys(pos, xi, target, t, e)
         pos = pos + u
         uf[:, t] = u
         #distance_to_obstacle = torch.norm(pos - robot.obstacle_position)
         obstacle_penalty = obstacle_penalty + line_circle_intersection_penalty(poso, pos, obstacle_position,
                                                                                obstacle_radius, 1e12)
-        final_position_penalty = final_position_penalty + dist(pos, target)
-    loss = 1e2 * final_position_penalty + 1e10 * dist(pos, target)
+        obstacle_penalty2 = obstacle_penalty2 + line_circle_intersection_penalty(poso, pos, obstacle_position2,
+                                                                                 obstacle_radius2, 1e12)
+        final_position_penalty = final_position_penalty + torch.norm(u)
+    loss = obstacle_penalty+obstacle_penalty2 + 1e11 * final_position_penalty
     loss.backward()
     optimizer.step()
     if system == 'REN':
@@ -163,19 +170,18 @@ with (torch.no_grad()):
     hull = ConvexHull(filtered_points)
 
     # Plot the polygon
-    plt.plot(filtered_points[:, 0], filtered_points[:, 1], 'o', markersize=3)
-    for simplex in hull.simplices:
-        plt.plot(filtered_points[simplex, 0], filtered_points[simplex, 1], 'k-')
+    # plt.plot(filtered_points[:, 0], filtered_points[:, 1], 'o', markersize=3)
+    # for simplex in hull.simplices:
+    #     plt.plot(filtered_points[simplex, 0], filtered_points[simplex, 1], 'k-')
     history = torch.stack(robot.history).cpu()
-    #obstacle_circle = plt.Circle(obstacle_position, obstacle_radius, color='r', fill=False)
+    obstacle_circle = plt.Circle(obstacle_position, obstacle_radius, color='r', fill=False)
+    obstacle_circle2 = plt.Circle(obstacle_position2, obstacle_radius2, color='r', fill=False)
 
     plt.plot(history[:, 0], history[:, 1], marker='o', label='Robot trajectory')
-    #plt.gca().add_patch(obstacle_circle)
-    #plt.scatter(obstacle_position[0].cpu(), obstacle_position[1].cpu(), color='r', label='Obstacle center')
+    plt.gca().add_patch(obstacle_circle)
+    plt.gca().add_patch(obstacle_circle2)
+    plt.scatter(obstacle_position[0].cpu(), obstacle_position[1].cpu(), color='r', label='Obstacle center')
     plt.scatter(target[0].cpu(), target[1].cpu(), color='b', label='Target point')  # Add target point
-
-
-
 
     plt.xlabel('X')
     plt.ylabel('Y')
@@ -189,11 +195,7 @@ with (torch.no_grad()):
     plt.plot(range(epochs), lossp.detach().numpy())
     plt.show()
 
-
-
-
 # Define A and b for the closed region
 
 
 # Plot the polygon
-

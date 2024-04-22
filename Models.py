@@ -30,14 +30,15 @@ class RNNModel(nn.Module):
 
         self.opt = OptNet(3, self.input_dim)
 
-    def forward(self, u, xi, A, b, t):
+    def forward(self, u, xi, target, t, e):
         # Initialize hidden state randomly
         # One time step
         xi = self.rnn(u, xi)
         out = self.fc(xi)
         out = out.squeeze()
         #OptNet Pass
-        out = self.opt(out, u, A, b)
+        if t > 4:
+            out = self.opt(target, out, u, e)
         return out, xi
 
 
@@ -338,11 +339,26 @@ class OptNet(torch.nn.Module):
         super(OptNet, self).__init__()
         # self.b = torch.nn.Parameter(torch.randn(D_in))
         self.A = cp.Parameter((m, n))
-        self.b = cp.Parameter(m)
+        #self.B = cp.Parameter((m, n))
+        self.b = cp.Parameter(n)
         z = cp.Variable(n)
+        #self.e = torch.nn.Parameter(torch.tensor([4.1]))
+        e = cp.Parameter(1)
+        self.target = cp.Parameter(n)
+        #constraints = [self.A @ z <= self.b]
         self.uo = cp.Parameter(n)
-        prob = cp.Problem(cp.Minimize(cp.sum_squares(z-self.uo)), [self.A @ z >= self.b])
-        self.layer = CvxpyLayer(prob, [self.A, self.b, self.uo], [z])
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - self.uo)), [cp.norm(self.b+z-self.target)<=e])
+        self.layer = CvxpyLayer(prob, [self.target, self.b, self.uo, e], [z])
 
-    def forward(self, uo, x, A, b):
-        return self.layer(A, b - A @ x, uo)[0]
+    def forward(self, target, uo, x, e):
+        return self.layer(target, x, uo, e)[0]
+
+
+class RobotDoubleIntegrator:
+    def __init__(self, dt):
+        self.dt = dt
+
+    def sym(self, p, v, u):
+        p_ = p + v * self.dt + 0.5 * u * self.dt ** 2
+        v_ = v + u * self.dt
+        return p_, v_
