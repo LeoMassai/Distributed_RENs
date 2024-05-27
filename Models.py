@@ -218,9 +218,20 @@ class NetworkedRENs(nn.Module):
         self.r = nn.ModuleList([REN(self.m[j], self.p[j], self.n[j], self.l[j]) for j in range(N)])
         self.s = nn.Parameter(torch.randn(N, device=device))
         self.gammaw = torch.nn.Parameter(15 * torch.randn(1, device=device))
+        # Create a mask where M is non-zero
+        self.mask = Muy != 0
+        # Count the number of non-zero elements in M
+        num_params = self.mask.sum().item()
+        # Initialize the trainable parameters
+        self.params = nn.Parameter(torch.randn(num_params) + 0.1)
+        # Create a clone of M to create Q
+        self.Q = Muy.clone()
 
     def forward(self, t, d, x, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
-
+        params = torch.abs(self.params)
+        # Assign the parameters to the corresponding positions in Q
+        self.Q[self.mask] = params
+        Q = self.Q
         gammaw = self.gammaw
         Mey = self.Mey
         H = torch.matmul(Mey.T, Mey)
@@ -245,17 +256,17 @@ class NetworkedRENs(nn.Module):
             setu = set(ui.numpy())
             A1 = torch.tensor(list(setu.intersection(set(A1t.numpy()))))
             A0 = torch.tensor(list(setu.intersection(set(A0t.numpy()))))
-            a = H[j, j] + torch.max(torch.stack([torch.sum(self.Muy[:, j]) for j in yi])) + sp[j]
+            a = H[j, j] + torch.max(torch.stack([torch.sum(Q[:, j]) for j in yi])) + sp[j]
             if A1.numel() != 0:
                 gamma = torch.sqrt(
-                    1 / a * torch.minimum(gammaw ** 2 / (torch.max(torch.stack([torch.sum(self.Muy[j, :])
+                    1 / a * torch.minimum(gammaw ** 2 / (torch.max(torch.stack([torch.sum(Q[j, :])
                                                                                 for j in
                                                                                 A1])) * gammaw ** 2 + 1),
-                                          1 / (torch.max(torch.stack([torch.sum(self.Muy[j, :])
+                                          1 / (torch.max(torch.stack([torch.sum(Q[j, :])
                                                                       for j in
                                                                       A0])))))
             else:
-                gamma = torch.sqrt(1 / (a * torch.max(torch.stack([torch.sum(self.Muy[j, :])
+                gamma = torch.sqrt(1 / (a * torch.max(torch.stack([torch.sum(Q[j, :])
                                                                    for j in
                                                                    A0]))))
             l.set_param(gamma)
@@ -270,8 +281,8 @@ class NetworkedRENs(nn.Module):
             xindex.append(xi)
         C2 = torch.block_diag(*C2s)
         D22 = torch.block_diag(*D22s)
-        u = torch.matmul(torch.inverse(torch.eye(self.Muy.size(0)) - torch.matmul(self.Muy, D22)),
-                         (torch.matmul(torch.matmul(self.Muy, C2), x)) + torch.matmul(self.Mud, d))
+        u = torch.matmul(torch.inverse(torch.eye(self.Muy.size(0)) - torch.matmul(Q, D22)),
+                         (torch.matmul(torch.matmul(Q, C2), x)) + torch.matmul(self.Mud, d))
         y_list = []
         x_list = []
         for j, l in enumerate(self.r):
@@ -284,4 +295,4 @@ class NetworkedRENs(nn.Module):
         e = torch.matmul(Mey, y)
         gammawout = gammaw ** 2
 
-        return e, x_, gamma_list, gammawout
+        return e, x_, gamma_list, gammawout, Q
