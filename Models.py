@@ -347,7 +347,7 @@ class OptNet(torch.nn.Module):
         self.target = cp.Parameter(n)
         #constraints = [self.A @ z <= self.b]
         self.uo = cp.Parameter(n)
-        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - self.uo)), [cp.norm(self.b+z-self.target)<=e])
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - self.uo)), [cp.norm(self.b + z - self.target) <= e])
         self.layer = CvxpyLayer(prob, [self.target, self.b, self.uo, e], [z])
 
     def forward(self, target, uo, x, e):

@@ -129,7 +129,7 @@ for epoch in range(epochs):
         obstacle_penalty2 = obstacle_penalty2 + line_circle_intersection_penalty(poso, pos, obstacle_position2,
                                                                                  obstacle_radius2, 1e12)
         final_position_penalty = final_position_penalty + torch.norm(u)
-    loss = obstacle_penalty+obstacle_penalty2 + 1e11 * final_position_penalty
+    loss = obstacle_penalty + obstacle_penalty2 + 1e11 * final_position_penalty
     loss.backward()
     optimizer.step()
     if system == 'REN':
