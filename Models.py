@@ -233,7 +233,8 @@ class NetworkedRENs(nn.Module):
         else:
             self.Q = nn.Parameter(torch.randn((sum(m), sum(p))))
 
-    def forward(self, t, d, x):
+    def forward(self, t, d, x, checkLMI=False):
+        # checkLMI if set to True, checks if the dissipativity LMI is satisfied at every step
         Q = self.Q
         if self.top:
             params = self.params
@@ -258,6 +259,7 @@ class NetworkedRENs(nn.Module):
         startu = 0
         starty = 0
         startx = 0
+        pesi = torch.zeros(self.N)
         for j, l in enumerate(self.r):
             # Free parametrization of individual l2 gains ensuring stability of networked REN
             xi = torch.arange(startx, startx + l.n)
@@ -267,6 +269,7 @@ class NetworkedRENs(nn.Module):
             A1 = torch.tensor(list(setu.intersection(set(A1t.numpy()))), device=self.device)
             A0 = torch.tensor(list(setu.intersection(set(A0t.numpy()))), device=self.device)
             a = H[j, j] + torch.max(torch.stack([torch.sum(torch.abs(Q[:, j])) for j in yi])) + sp[j]
+            pesi[j] = a
             if A0.numel() != 0:
                 if A1.numel() != 0:
                     gamma = torch.sqrt(
@@ -314,5 +317,20 @@ class NetworkedRENs(nn.Module):
         gammawout = gammaw ** 2
 
         # check LMI
+        if checkLMI:
+            with torch.no_grad():
+                Nu = torch.block_diag(*[pesi[j] * gamma_list[j] ** 2 * torch.eye(self.m[j]) for j in range(self.N)])
+                Ny = torch.block_diag(*[pesi[j] * torch.eye(self.p[j]) for j in range(self.N)])
+                Xi = torch.block_diag(Nu, -Ny)
+                S = torch.block_diag(gammawout * torch.eye(sum(self.m)), -torch.eye(sum(self.p)))
+                XiS = torch.block_diag(Xi, -S)
 
-        return e, x_, gamma_list, gammawout, Q
+                M1 = torch.hstack((Q.data, self.Mud))
+                M2 = torch.hstack((torch.eye(sum(self.p)), torch.zeros((sum(self.p), sum(self.m)))))
+                M3 = torch.hstack((torch.zeros((sum(self.m), sum(self.p))), torch.eye(sum(self.m))))
+                M4 = torch.hstack((self.Mey, torch.zeros((sum(self.p), sum(self.m)))))
+                M = torch.vstack((M1, M2, M3, M4))
+                lmi = M.T @ XiS @ M
+                lmip = torch.linalg.eigvals(lmi)
+
+        return e, x_, gamma_list, gammawout, Q, lmip

@@ -84,7 +84,7 @@ for epoch in range(epochs):
         d = torch.from_numpy(dExp[0, exp]).float().to(device)
         xi = torch.cat(xi)
         for t in range(1, t_end):
-            yRENm[:, t], xi, gamma, gammaw, Q = RENsys(t, d[:, t - 1], xi)
+            yRENm[:, t], xi, gamma, gammaw, Q, lmip = RENsys(t, d[:, t - 1], xi, checkLMI=True)
 
         loss = loss + MSE(yRENm[:, 0:yRENm.size(1)], y[:, 0:t_end + 1])
         # ignorare da loss effetto condizione iniziale
@@ -98,6 +98,7 @@ for epoch in range(epochs):
     print(f"Epoch: {epoch + 1} \t||\t Loss: {loss}")
     print(f"Gamma: {gamma}")
     print(f"Q: {Q}")
+    print(f"Q: {lmip}")
     LOSS[epoch] = loss
 
 plt.figure('30')
