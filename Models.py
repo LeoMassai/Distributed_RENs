@@ -220,7 +220,7 @@ class NetworkedRENs(nn.Module):
         self.N = N
         self.r = nn.ModuleList([REN(self.m[j], self.p[j], self.n[j], self.l[j]) for j in range(N)])
         self.s = nn.Parameter(torch.randn(N, device=device))
-        self.gammaw = torch.nn.Parameter(torch.randn(1, device=device))
+        self.gammaw = torch.nn.Parameter(4 * torch.randn(1, device=device))
         if top:
             # Create a mask where M is non-zero
             self.mask = Muy.ge(0.1)
@@ -312,5 +312,7 @@ class NetworkedRENs(nn.Module):
         x_ = torch.cat(x_list)
         e = torch.matmul(Mey, y)
         gammawout = gammaw ** 2
+
+        # check LMI
 
         return e, x_, gamma_list, gammawout, Q
