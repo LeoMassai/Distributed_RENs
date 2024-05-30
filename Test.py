@@ -45,7 +45,7 @@ Mey = torch.eye(3)
 M = M.float()
 N = 3
 
-RENsys = NetworkedRENs(N, M, Mud, Mey, n, p, n_xi, l, top=False)
+RENsys = NetworkedRENs(N, M, Mud, Mey, n, p, n_xi, l, top=True)
 
 # Define the system
 

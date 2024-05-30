@@ -227,7 +227,7 @@ class NetworkedRENs(nn.Module):
             # Count the number of non-zero elements in M
             num_params = self.mask.sum().item()
             # Initialize the trainable parameters
-            self.params = nn.Parameter(torch.randn(num_params))
+            self.params = nn.Parameter(0.03*torch.randn(num_params))
             # Create a clone of M to create Q (the trainable version of M)
             self.Q = Muy.clone()
         else:
@@ -241,7 +241,7 @@ class NetworkedRENs(nn.Module):
             # Assign the parameters to the corresponding positions in Q
             masked_values = torch.zeros_like(Q, device=self.device)
             masked_values[self.mask] = params
-            Q = Q + masked_values
+            Q = masked_values
 
         gammaw = self.gammaw
         Mey = self.Mey
@@ -316,7 +316,7 @@ class NetworkedRENs(nn.Module):
         e = torch.matmul(Mey, y)
         gammawout = gammaw ** 2
 
-        # check LMI
+        # check Dissipativity LMI
         if checkLMI:
             with torch.no_grad():
                 Nu = torch.block_diag(*[pesi[j] * gamma_list[j] ** 2 * torch.eye(self.m[j]) for j in range(self.N)])
