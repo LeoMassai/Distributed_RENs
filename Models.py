@@ -217,6 +217,7 @@ class NetworkedRENs(nn.Module):
         self.Muy = Muy
         self.Mud = Mud
         self.Mey = Mey
+        self.diag_params = nn.Parameter(torch.randn(sum(p)))  # For trainable Mey matrix
         self.N = N
         self.r = nn.ModuleList([REN(self.m[j], self.p[j], self.n[j], self.l[j]) for j in range(N)])
         self.s = nn.Parameter(torch.randn(N, device=device))
@@ -227,11 +228,11 @@ class NetworkedRENs(nn.Module):
             # Count the number of non-zero elements in M
             num_params = self.mask.sum().item()
             # Initialize the trainable parameters
-            self.params = nn.Parameter(0.03*torch.randn(num_params))
+            self.params = nn.Parameter(0.03 * torch.randn(num_params))
             # Create a clone of M to create Q (the trainable version of M)
             self.Q = Muy.clone()
         else:
-            self.Q = nn.Parameter(torch.randn((sum(m), sum(p))))
+            self.Q = nn.Parameter(0.01 * torch.randn((sum(m), sum(p))))
 
     def forward(self, t, d, x, checkLMI=False):
         # checkLMI if set to True, checks if the dissipativity LMI is satisfied at every step
@@ -244,8 +245,9 @@ class NetworkedRENs(nn.Module):
             Q = masked_values
 
         gammaw = self.gammaw
-        Mey = self.Mey
-        H = torch.matmul(Mey.T, Mey)
+        #Mey = self.Mey
+        tMey = torch.diag(self.diag_params)
+        H = torch.matmul(tMey.T, tMey)
         sp = torch.abs(self.s)
         gamma_list = []
         C2s = []
@@ -269,6 +271,7 @@ class NetworkedRENs(nn.Module):
             A1 = torch.tensor(list(setu.intersection(set(A1t.numpy()))), device=self.device)
             A0 = torch.tensor(list(setu.intersection(set(A0t.numpy()))), device=self.device)
             a = H[j, j] + torch.max(torch.stack([torch.sum(torch.abs(Q[:, j])) for j in yi])) + sp[j]
+            #a = H[j, j] + torch.max(torch.stack([torch.sum(torch.abs(Q[:, j])) for j in yi]))
             pesi[j] = a
             if A0.numel() != 0:
                 if A1.numel() != 0:
@@ -313,7 +316,7 @@ class NetworkedRENs(nn.Module):
 
         y = torch.cat(y_list)
         x_ = torch.cat(x_list)
-        e = torch.matmul(Mey, y)
+        e = torch.matmul(tMey, y)
         gammawout = gammaw ** 2
 
         # check Dissipativity LMI
@@ -328,7 +331,7 @@ class NetworkedRENs(nn.Module):
                 M1 = torch.hstack((Q.data, self.Mud))
                 M2 = torch.hstack((torch.eye(sum(self.p)), torch.zeros((sum(self.p), sum(self.m)))))
                 M3 = torch.hstack((torch.zeros((sum(self.m), sum(self.p))), torch.eye(sum(self.m))))
-                M4 = torch.hstack((self.Mey, torch.zeros((sum(self.p), sum(self.m)))))
+                M4 = torch.hstack((tMey, torch.zeros((sum(self.p), sum(self.m)))))
                 M = torch.vstack((M1, M2, M3, M4))
                 lmi = M.T @ XiS @ M
                 lmip = torch.linalg.eigvals(lmi)
