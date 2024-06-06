@@ -34,7 +34,7 @@ class REN(nn.Module):
     # ## Implementation of REN model, modified from "Recurrent Equilibrium Networks: Flexible Dynamic Models with
     # Guaranteed Stability and Robustness" by Max Revay et al.
     def __init__(self, m, p, n, l, bias=False, mode="l2stable", gamma=0.3, Q=None, R=None, S=None,
-                 device=torch.device('cpu')):
+                 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super().__init__()
         self.m = m  # input dimension
         self.n = n  # state dimension
@@ -57,7 +57,8 @@ class REN(nn.Module):
         self.X3 = nn.Parameter(torch.randn(min(p, m), min(p, m), device=device) * std)
         self.Y3 = nn.Parameter(torch.randn(min(p, m), min(p, m), device=device) * std)
         self.D12 = nn.Parameter(torch.randn(l, m, device=device))
-        #self.D21 = nn.Parameter((torch.randn(p, l, device=device) * std))
+        #self.D21 = nn.Parameter((torch.randn(p, l, device=device) * std)) #set to zero later to enable
+        # computable Networked RENs
         self.B2 = nn.Parameter((torch.randn(n, m, device=device) * std))
         self.C2 = nn.Parameter((torch.randn(p, n, device=device) * std))
 
@@ -337,3 +338,30 @@ class NetworkedRENs(nn.Module):
                 lmip = torch.linalg.eigvals(lmi)
 
         return e, x_, gamma_list, gammawout, Q, lmip
+
+
+# NeuralSLS Framework ------------------------------------------------------------------------
+
+class PsiX(nn.Module):  #
+    def __init__(self, f):
+        super().__init__()
+        self.f = f
+
+    def forward(self, t, x, u):
+        psi_x = self.f(t, x, u)
+        return psi_x
+
+
+class Controller(nn.Module):
+    def __init__(self, f, m, p, n, l):
+        super().__init__()
+        self.m = m
+        self.p = p
+        self.psi_x = PsiX(f)
+        self.psi_u = REN(self.m, self.p, n, l)  # REN is PsiU
+
+    def forward(self, t, x, xi, x_, u_):
+        w = x - self.psi_x(t, x_, u_)  # Reconstructing noise
+        u, xi_ = self.psi_u(t, w, xi)  # Feeding the noise into the controller and computing u and updated
+        # controller state
+        return u, xi_

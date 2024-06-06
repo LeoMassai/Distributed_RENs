@@ -45,7 +45,7 @@ Mey = torch.eye(3)
 M = M.float()
 N = 3
 
-RENsys = NetworkedRENs(N, M, Mud, Mey, n, p, n_xi, l, top=True)
+RENsys = NetworkedRENs(N, M, Mud, Mey, n, p, n_xi, l, top=False)
 
 # Define the system
 
@@ -86,7 +86,7 @@ for epoch in range(epochs):
         for t in range(1, t_end):
             yRENm[:, t], xi, gamma, gammaw, Q, lmip = RENsys(t, d[:, t - 1], xi, checkLMI=True)
 
-        loss = loss + MSE(yRENm[:, 0:yRENm.size(1)], y[:, 0:t_end + 1])
+        loss = loss + MSE(yRENm[:, 0:yRENm.size(1)], y[:, 0:t_end + 1])+torch.linalg.matrix_norm(Q, ord='nuc')
         # ignorare da loss effetto condizione iniziale
 
     loss = loss / nExp
