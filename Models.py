@@ -28,9 +28,9 @@ class RNNModel(nn.Module):
         # Readout layer
         self.fc = nn.Linear(hidden_dim, output_dim)
 
-        self.opt = OptNet(3, self.input_dim)
+        self.opt = OptNet(3, self.input_dim, 0.1)
 
-    def forward(self, u, xi, target, t, e):
+    def forward(self, u, v, xi, target, t):
         # Initialize hidden state randomly
         # One time step
         xi = self.rnn(u, xi)
@@ -38,7 +38,7 @@ class RNNModel(nn.Module):
         out = out.squeeze()
         #OptNet Pass
         if t > 4:
-            out = self.opt(target, out, u, e)
+            out = self.opt(target, out, v, u)
         return out, xi
 
 
@@ -335,23 +335,25 @@ class NetworkedRENs(nn.Module):
 
 # Opten: Convex optimization problem as a layer
 class OptNet(torch.nn.Module):
-    def __init__(self, m, n):
+    def __init__(self, m, n, dt):
         super(OptNet, self).__init__()
         # self.b = torch.nn.Parameter(torch.randn(D_in))
+        self.dt = dt
         self.A = cp.Parameter((m, n))
         #self.B = cp.Parameter((m, n))
         self.b = cp.Parameter(n)
+        self.v = cp.Parameter(n)
         z = cp.Variable(n)
+        e = cp.Variable(1)
         #self.e = torch.nn.Parameter(torch.tensor([4.1]))
-        e = cp.Parameter(1)
         self.target = cp.Parameter(n)
         #constraints = [self.A @ z <= self.b]
         self.uo = cp.Parameter(n)
-        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - self.uo)), [cp.norm(self.b + z - self.target) <= e])
-        self.layer = CvxpyLayer(prob, [self.target, self.b, self.uo, e], [z])
+        prob = cp.Problem(cp.Minimize(cp.sum_squares(z - self.uo)+1e2*cp.abs(e)), [cp.norm(self.b + self.v*dt+ z*dt**2 - self.target) <= e])
+        self.layer = CvxpyLayer(prob, [self.target, self.b, self.v, self.uo], [z, e])
 
-    def forward(self, target, uo, x, e):
-        return self.layer(target, x, uo, e)[0]
+    def forward(self, target, x, v, uo):
+        return self.layer(target, x, v, uo)[0]
 
 
 class RobotDoubleIntegrator:

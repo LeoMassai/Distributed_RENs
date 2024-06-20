@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import math
 import matplotlib.pyplot as plt
-from Models import REN, RNNModel
+from Models import REN, RNNModel, RobotDoubleIntegrator
 import numpy as np
 from scipy.spatial import ConvexHull
 
@@ -84,6 +84,8 @@ m = 2
 p = 2
 l = 4
 
+di = RobotDoubleIntegrator(.1)
+
 A = torch.tensor([[1.1, 0], [0, 1], [-1, -1]], device=device)  # Matrix A
 b = torch.tensor([5.1, 5, -1], device=device)  # Vector b
 
@@ -118,10 +120,11 @@ for epoch in range(epochs):
     u = torch.zeros(2, device=device)
     xi = torch.randn(n, device=device)
     pos = posi
+    v = torch.zeros(2)
     for t in range(T):
         poso = pos
-        u, xi = RENsys(pos, xi, target, t, e)
-        pos = pos + u
+        u, xi = RENsys(pos, v, xi, target, t)
+        pos, v = di.sym(pos, v, u)
         uf[:, t] = u
         #distance_to_obstacle = torch.norm(pos - robot.obstacle_position)
         obstacle_penalty = obstacle_penalty + line_circle_intersection_penalty(poso, pos, obstacle_position,
